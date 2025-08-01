@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <title>Tabboz Simulator Super</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #f9f3e7; color: #222; }
+    #game { max-width: 630px; margin: 40px auto; background: #fff; padding: 18px; border-radius: 12px; box-shadow: 0 0 20px #bbb; }
+    #img { width: 100%; margin-bottom: 14px; border-radius: 8px; border: 1px solid #ccc; }
+    .choices { margin-top: 18px; }
+    .choices button { margin-bottom: 8px; display: block; width: 100%; font-size: 1em; padding: 7px; background: #e5d7b8; border: none; border-radius: 6px; cursor: pointer; }
+    .choices button:hover { background: #d4c49c; }
+    #stats, #inv, #missions { margin-bottom: 10px; font-size: 0.97em; }
+    #event { color: #b30000; font-weight: bold; margin-bottom: 12px; }
+    #week { font-weight: bold; margin-bottom: 8px; color: #4a3928;}
+    #inv { background: #f3ead1; border-radius: 8px; padding: 8px; }
+    #missions { background: #f8e9cf; border-radius: 8px; padding: 8px; }
+    .badge { background: #cfc; border-radius: 5px; padding: 2px 6px; margin-right: 5px; font-size: 0.95em;}
+    .secret { color: #bc8500; font-weight: bold;}
+    #saveLoad { margin-bottom: 14px; }
+    #saveLoad button { margin-right: 10px; }
+  </style>
+</head>
+<body>
+  <div id="game">
+    <h2>Tabboz Simulator Super</h2>
+    <div id="week"></div>
+    <div id="stats"></div>
+    <div id="inv"></div>
+    <div id="missions"></div>
+    <div id="saveLoad">
+      <button onclick="saveGame()">Salva partita</button>
+      <button onclick="loadGame()">Carica</button>
+      <button onclick="resetGame()">Resetta</button>
+    </div>
+    <div id="event"></div>
+    <img id="img" src="" alt="" style="display:none"/>
+    <div id="story"></div>
+    <div class="choices" id="choices"></div>
+  </div>
+  <script>
+    // Stato tabbozzo
+    let stato = {
+      scuola: 50,
+      soldi: 20,
+      amici: 50,
+      salute: 80,
+      rispetto: 10,
+      debiti: 0,
+      motorino: false,
+      cellulare: false,
+      vestito: "",
+      oggetti: [],
+      reputazione: { nerd: 10, bulli: 10, prof: 10 },
+      settimana: 1,
+      turno: 0,
+      missioni: [
+        { nome: "Ruba il motorino al vicino", completata: false },
+        { nome: "Organizza una festa leggendaria", completata: false },
+        { nome: "Sgattaiola fuori dalla scuola", completata: false },
+        { nome: "Scopri la scena segreta", completata: false }
+      ],
+      sceneSegrete: false,
+      finale: ""
+    };
+
+    // Eventi casuali rozzi/tabbozzi
+    const eventi = [
+      {
+        testo: "Hai incontrato una rockband nel vicolo. Ti hanno riempito di botte e rubato i soldi.",
+        img: "https://i.imgur.com/5nnIsmL.png",
+        effetto: s => { s.salute -= 30; s.soldi = Math.max(0, s.soldi - 10); s.rispetto += 2; }
+      },
+      {
+        testo: "Scivoli su una buccia di banana davanti a tutti. Figuraccia bestiale!",
+        img: "https://i.imgur.com/0Tn9XnQ.png",
+        effetto: s => { s.amici -= 5; s.salute -= 5; s.rispetto -= 2; }
+      },
+      {
+        testo: "Ci provi con la tipa sbagliata, il suo ragazzo ti rincorre col casco.",
+        img: "https://i.imgur.com/dpAlL6C.png",
+        effetto: s => { s.salute -= 15; s.amici -= 3; s.rispetto -= 3; }
+      },
+      {
+        testo: "Hai vinto una rissa al bar! Gli amici ti rispettano (un po').",
+        img: "https://i.imgur.com/2k1ZzDe.png",
+        effetto: s => { s.amici += 10; s.salute -= 10; s.rispetto += 4; }
+      },
+      {
+        testo: "Il motorino si rompe e devi tornare a piedi... che sfiga!",
+        img: "https://i.imgur.com/2oZxICV.png",
+        effetto: s => { if (s.motorino) { s.motorino = false; s.salute -= 5; s.debiti += 5; } }
+      },
+      {
+        testo: "Un vecchio ti offre un panino. Finalmente qualcosa di buono!",
+        img: "https://i.imgur.com/8xU5WQ7.png",
+        effetto: s => { s.salute += 10; s.soldi += 2; }
+      },
+      {
+        testo: "La prof ti becca a copiare: nota sul registro!",
+        img: "https://i.imgur.com/7KzWNRh.png",
+        effetto: s => { s.scuola -= 10; s.amici += 2; s.reputazione.prof -= 5; }
+      },
+      {
+        testo: "Ti scambiano per un VIP al bar e ti offrono un giro gratis.",
+        img: "https://i.imgur.com/vUbZLJq.png",
+        effetto: s => { s.soldi += 5; s.amici += 5; s.rispetto += 5; }
+      },
+      {
+        testo: "Ti rubano il cellulare in tram!",
+        img: "https://i.imgur.com/XkQ5o4g.png",
+        effetto: s => { s.soldi = Math.max(0, s.soldi - 15); s.amici -= 2; s.cellulare = false; }
+      },
+      {
+        testo: "Ti offrono una canna, ma era origano.",
+        img: "https://i.imgur.com/3hJKH8g.png",
+        effetto: s => { s.salute += 5; s.amici -= 1; }
+      },
+      {
+        testo: "Hai trovato 10€ per terra!",
+        img: "https://i.imgur.com/N3yCz0V.png",
+        effetto: s => { s.soldi += 10; }
+      }
+    ];
+
+    // Scene per ogni settimana
+    const settimane = [
+      // Settimana 1
+      [
+        {
+          img: "https://i.imgur.com/Q8oY3Z9.png",
+          testo: "Sei al primo giorno di scuola superiore. Che fai?",
+          scelte: [
+            { testo: "Vai in classe", effetto: s => { s.scuola+=10; s.salute+=2; s.reputazione.prof+=5; s.turno++; }, next: 1 },
+            { testo: "Vai al bar con amici", effetto: s => { s.scuola-=10; s.soldi-=5; s.amici+=10; s.salute-=2; s.rispetto+=2; s.reputazione.bulli+=4; s.turno++; }, next: 2 }
+          ]
+        },
+        {
+          img: "https://i.imgur.com/0TDV2qW.png",
+          testo: "La prof spiega. Ascolti o chatti al cellulare?",
+          scelte: [
+            { testo: "Ascolti", effetto: s => { s.scuola+=15; s.salute+=1; s.reputazione.nerd+=4; s.turno++; }, next: 3 },
+            { testo: "Chat sul cellulare", effetto: s => { s.scuola-=10; s.amici+=8; s.salute-=1; s.cellulare=true; s.turno++; }, next: 3 }
+          ]
+        },
+        {
+          img: "https://i.imgur.com/h6W7QKj.png",
+          testo: "Al bar incontri gli amici. Ti offrono una sigaretta.",
+          scelte: [
+            { testo: "Accetti", effetto: s => { s.salute-=10; s.amici+=5; s.soldi-=2; s.rispetto+=2; s.turno++; }, next: 4 },
+            { testo: "Rifiuti", effetto: s => { s.salute+=2; s.amici-=5; s.reputazione.nerd+=2; s.turno++; }, next: 4 }
+          ]
+        },
+        {
+          img: "https://i.imgur.com/VtJxvRi.png",
+          testo: "Un amico ti propone di comprare un motorino usato.",
+          scelte: [
+            { testo: "Lo compri (15€)", effetto: s => { if(s.soldi>=15){ s.soldi-=15; s.motorino=true; s.amici+=5; s.rispetto+=5; s.oggetti.push("Motorino rubato"); s.missioni[0].completata=true;} else {s.amici-=3;} s.turno++; }, next: 5 },
+            { testo: "Non lo compri", effetto: s => { s.motorino=false; s.amici-=2; s.turno++; }, next: 5 }
+          ]
+        },
+        {
+          img: "https://i.imgur.com/oRXE5hN.png",
+          testo: "C'è una festa stasera. Che fai?",
+          scelte: [
+            { testo: "Vai con il motorino", effetto: s => { if(s.motorino){s.soldi-=5; s.salute-=10; s.amici+=15; s.rispetto+=5; s.missioni[1].completata=true;}else{s.amici+=2; s.salute-=5;} s.turno++; }, next: "settimana" },
+            { testo: "Vai a piedi", effetto: s => { s.salute-=2; s.amici+=5; s.soldi-=2; s.turno++; }, next: "settimana" },
+            { testo: "Resti a casa", effetto: s => { s.scuola+=8; s.salute+=5; s.amici-=5; s.reputazione.nerd+=2; s.turno++; }, next: "settimana" }
+          ]
+        }
+      ],
+      // Settimana 2
+      [
+        {
+          img: "https://i.imgur.com/fZrJfLw.png",
+          testo: "Hai bisogno di soldi. Che fai?",
+          scelte: [
+            { testo: "Chiedi ai genitori", effetto: s => { s.soldi+=10; s.salute+=2; s.debiti+=5; s.turno++; }, next: 1 },
+            { testo: "Scommetti al bar", effetto: s => { let v=Math.random()<0.5?-10:20; s.soldi+=v; s.salute-=2; s.amici+=5; if(v<0)s.debiti+=10; s.turno++; }, next: 1 }
+          ]
+        },
+        {
+          img: "https://i.imgur.com/OaW8Jk1.png",
+          testo: "Gli amici vogliono andare al cinema.",
+          scelte: [
+            { testo: "Vai con loro", effetto: s => { s.soldi-=7; s.amici+=10; s.turno++; }, next: 2 },
+            { testo: "Rimani a casa", effetto: s => { s.scuola+=8; s.salute+=3; s.amici-=6; s.turno++; }, next: 2 }
+          ]
+        },
+        {
+          img: "https://i.imgur.com/WwA2dQ9.png",
+          testo: "Hai dormito poco. Che fai?",
+          scelte: [
+            { testo: "Vai comunque a scuola", effetto: s => { s.scuola+=5; s.salute-=10; s.turno++; }, next: 3 },
+            { testo: "Salti la scuola", effetto: s => { s.scuola-=10; s.salute+=10; s.amici+=5; s.reputazione.bulli+=2; s.turno++; }, next: 3 }
+          ]
+        },
+        {
+          img: "https://i.imgur.com/WwA2dQ9.png",
+          testo: "Al bar offrono caffè gratis.",
+          scelte: [
+            { testo: "Prendi 3 caffè", effetto: s => { s.salute-=5; s.soldi+=2; s.amici+=5; s.turno++; }, next: 4 },
+            { testo: "Ne prendi solo uno", effetto: s => { s.salute+=2; s.amici+=2; s.turno++; }, next: 4 }
+          ]
+        },
+        {
+          img: "https://i.imgur.com/5nnIsmL.png",
+          testo: "Invitano a giocare a calcetto.",
+          scelte: [
+            { testo: "Vai a giocare", effetto: s => { s.salute-=7; s.amici+=12; s.soldi-=3; s.rispetto+=4; s.oggetti.push("Scarpe calcetto"); s.turno++; }, next: "settimana" },
+            { testo: "Dici di no", effetto: s => { s.amici-=8; s.scuola+=5; s.reputazione.nerd+=2; s.turno++; }, next: "settimana" }
+          ]
+        }
+      ],
+      // Settimana 3
+      [
+        {
+          img: "https://i.imgur.com/HQ6X9o6.png",
+          testo: "Vedi una maglietta figa al mercato.",
+          scelte: [
+            { testo: "La compri (10€)", effetto: s => { s.soldi-=10; s.amici+=8; s.vestito="Maglietta firmata"; s.turno++; }, next: 1 },
+            { testo: "Non la compri", effetto: s => { s.amici-=3; s.turno++; }, next: 1 }
+          ]
+        },
+        {
+          img: "https://i.imgur.com/7KzWNRh.png",
+          testo: "Sei affamato, ma hai pochi soldi.",
+          scelte: [
+            { testo: "Ti arrabatti con un toast", effetto: s => { s.soldi-=2; s.salute+=4; s.oggetti.push("Toast del bar"); s.turno++; }, next: 2 },
+            { testo: "Salti il pasto", effetto: s => { s.salute-=8; s.turno++; }, next: 2 }
+          ]
+        },
+        {
+          img: "https://i.imgur.com/0TDV2qW.png",
+          testo: "Controllo compiti: la prof è severa.",
+          scelte: [
+            { testo: "Li hai fatti", effetto: s => { s.scuola+=12; s.amici+=2; s.reputazione.prof+=3; s.turno++; }, next: 3 },
+            { testo: "Non li hai fatti", effetto: s => { s.scuola-=15; s.salute-=2; s.reputazione.bulli+=3; s.turno++; }, next: 3 }
+          ]
+        },
+        {
+          img: "https://i.imgur.com/VtJxvRi.png",
+          testo: "Motorino: lo usi per andare in centro?",
+          scelte: [
+            { testo: "Sì, ma rischi multa (random)", effetto: s => { if(s.motorino){s.soldi-=3; if(Math.random()<0.5){s.soldi-=25; s.debiti+=25;}} s.turno++; }, next: 4 },
+            { testo: "No, meglio evitare", effetto: s => { s.salute+=3; s.turno++; }, next: 4 }
+          ]
+        },
+        {
+          img: "https://i.imgur.com/oRXE5hN.png",
+          testo: "Sabato sera al pub.",
+          scelte: [
+            { testo: "Bevi come una spugna", effetto: s => { s.salute-=15; s.amici+=10; s.soldi-=8; s.rispetto+=5; s.missioni[2].completata=true; s.turno++; }, next: "settimana" },
+            { testo: "Bevi poco", effetto: s => { s.salute+=2; s.amici+=3; s.soldi-=2; s.turno++; }, next: "settimana" },
+            { testo: "Non bevi", effetto: s => { s.salute+=5; s.amici-=3; s.turno++; }, next: "settimana" }
+          ]
+        }
+      ]
+    ];
+
+    // Scena segreta: si sblocca solo se hai motorino rubato, scarpe calcetto e toast del bar
+    function checkSecret() {
+      let ogg = stato.oggetti;
+      if (ogg.includes("Motorino rubato") && ogg.includes("Scarpe calcetto") && ogg.includes("Toast del bar") && !stato.sceneSegrete) {
+        stato.sceneSegrete = true;
+        stato.missioni[3].completata = true;
+        showSecretScene();
+        return true;
+      }
+      return false;
+    }
+
+    function showSecretScene() {
+      aggiornaStats();
+      document.getElementById('img').src = "https://i.imgur.com/8xU5WQ7.png";
+      document.getElementById('img').style.display = "block";
+      document.getElementById('story').innerHTML = "<span class='secret'>SCENA SEGRETA!</span> In una notte magica, il tabbozzo diventa leggenda. I bulli si inchinano, i nerd lo temono, la prof lo promuove e il barista gli offre caffè gratis a vita. Hai sbloccato il finale segreto!";
+      document.getElementById('event').textContent = '';
+      document.getElementById('choices').innerHTML = '';
+      let btn = document.createElement('button');
+      btn.textContent = "Ricomincia!";
+      btn.onclick = function() { resetGame(); };
+      document.getElementById('choices').appendChild(btn);
+      stato.finale = "segreto";
+    }
+
+    function aggiornaStats() {
+      document.getElementById('stats').innerHTML =
+        `Scuola: ${stato.scuola} | Soldi: ${stato.soldi}€ | Amici: ${stato.amici} | Salute: ${stato.salute} | Rispetto: ${stato.rispetto} | Debiti: ${stato.debiti}<br>
+        Reputazione Nerd: ${stato.reputazione.nerd}, Bulli: ${stato.reputazione.bulli}, Prof: ${stato.reputazione.prof}`;
+      document.getElementById('week').textContent = `Settimana ${stato.settimana}`;
+      let inv = [];
+      if(stato.motorino) inv.push("🛵 Motorino");
+      if(stato.cellulare) inv.push("📱 Cellulare");
+      if(stato.vestito) inv.push("👕 "+stato.vestito);
+      inv = inv.concat(stato.oggetti.map(o => "🎒 "+o));
+      document.getElementById('inv').innerHTML = "<b>Inventario:</b> "+(inv.length?inv.join(", "):"Vuoto");
+      // Missioni
+      let miss = stato.missioni.map(m => `<span class="badge">${m.completata ? "✔️" : "❌"} ${m.nome}</span>`);
+      document.getElementById('missions').innerHTML = "<b>Missioni:</b> "+miss.join(" ");
+    }
+
+    function eventoCasuale() {
+      // 1 su 3 di probabilità
+      if (Math.random() < 0.33) {
+        let e = eventi[Math.floor(Math.random() * eventi.length)];
+        e.effetto(stato);
+        document.getElementById('event').innerHTML = `<img src="${e.img}" style="width:38px;vertical-align:middle;margin-right:8px;border-radius:4px;">${e.testo}`;
+      } else {
+        document.getElementById('event').textContent = '';
+      }
+    }
+
+    // Finali multipli
+    function checkFinali() {
+      if (stato.salute <= 0) return "ospedale";
+      if (stato.scuola < -30) return "espulso";
+      if (stato.debiti > 50) return "galera";
+      if (stato.rispetto > 50) return "boss";
+      if (stato.reputazione.prof > 45) return "prof";
+      return "";
+    }
+
+    function mostraFinale(tipo) {
+      aggiornaStats();
+      document.getElementById('img').style.display = "none";
+      document.getElementById('event').textContent = '';
+      let testo = "";
+      if (tipo === "ospedale") testo = "Sei finito all'ospedale. Troppa vita da tabbozzo! 😂";
+      else if (tipo === "espulso") testo = "Sei stato espulso dalla scuola. Il tabbozzo ora vive di bar e motorini.";
+      else if (tipo === "galera") testo = "Troppi debiti, troppi casini: ora sei in galera!";
+      else if (tipo === "boss") testo = "Diventi il boss del quartiere. I tabbozzi ti rispettano, il bar è tuo.";
+      else if (tipo === "prof") testo = "Con sorpresa, diventi professore! La vita cambia...";
+      else testo = "Fine!";
+      document.getElementById('story').innerHTML = `<span class='secret'>${testo}</span>`;
+      document.getElementById('choices').innerHTML = '';
+      let btn = document.createElement('button');
+      btn.textContent = "Ricomincia!";
+      btn.onclick = function() { resetGame(); };
+      document.getElementById('choices').appendChild(btn);
+      stato.finale = tipo;
+    }
+
+    function mostraScene(n) {
+      aggiornaStats();
+      let finale = checkFinali();
+      if (finale) { mostraFinale(finale); return; }
+      if (checkSecret()) return;
+
+      let sceneset = settimane[stato.settimana-1];
+      if (!sceneset) sceneset = settimane[settimane.length - 1];
+      let scena = sceneset[n];
+      let imgEl = document.getElementById('img');
+      imgEl.src = scena.img;
+      imgEl.style.display = scena.img ? "block" : "none";
+      document.getElementById('story').textContent = scena.testo;
+      let choices = document.getElementById('choices');
+      choices.innerHTML = '';
+      scena.scelte.forEach((sc, i) => {
+        let btn = document.createElement('button');
+        btn.textContent = sc.testo;
+        btn.onclick = function() {
+          sc.effetto(stato);
+          eventoCasuale();
+          // Dopo ogni scelta, ricontrolla finali/scene segrete
+          let finale = checkFinali();
+          if (finale) { mostraFinale(finale); return; }
+          if (checkSecret()) return;
+          if (sc.next === "settimana") {
+            stato.settimana++;
+            stato.turno = 0;
+            mostraScene(0);
+          } else {
+            mostraScene(sc.next);
+          }
+        };
+        choices.appendChild(btn);
+      });
+    }
+
+    // Salvataggio/caricamento
+    function saveGame() {
+      localStorage.setItem("tabbozSuperSave", JSON.stringify(stato));
+      alert("Partita salvata!");
+    }
+    function loadGame() {
+      let s = localStorage.getItem("tabbozSuperSave");
+      if (s) {
+        stato = JSON.parse(s);
+        mostraScene(stato.turno);
+        alert("Partita caricata!");
+      } else {
+        alert("Nessun salvataggio trovato.");
+      }
+    }
+    function resetGame() {
+      stato = {
+        scuola: 50, soldi: 20, amici: 50, salute: 80, rispetto: 10, debiti: 0,
+        motorino: false, cellulare: false, vestito: "", oggetti: [],
+        reputazione: { nerd: 10, bulli: 10, prof: 10 },
+        settimana: 1, turno: 0,
+        missioni: [
+          { nome: "Ruba il motorino al vicino", completata: false },
+          { nome: "Organizza una festa leggendaria", completata: false },
+          { nome: "Sgattaiola fuori dalla scuola", completata: false },
+          { nome: "Scopri la scena segreta", completata: false }
+        ],
+        sceneSegrete: false,
+        finale: ""
+      };
+      mostraScene(0);
+    }
+
+    // Avvio
+    mostraScene(0);
+  </script>
+</body>
+</html>
